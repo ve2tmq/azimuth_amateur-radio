@@ -20,7 +20,7 @@ class FT8x7(object):
     
     # Constants
     # Serial port settings
-    SERIAL_SPEED = 38400
+    SERIAL_SPEED = 9600
     SERIAL_STOPBITS = serial.STOPBITS_TWO
     SERIAL_TIMEOUT = 1.0
     # Transceiver modes and commands
