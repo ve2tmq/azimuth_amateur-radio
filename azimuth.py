@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import math, numpy, statistics
-from scipy import stats
 import serial
 import io
 import datetime
 import sys
+import logging
 import threading
 import http.server
 from functools import partial
@@ -14,16 +14,18 @@ from time import sleep
 import configparser
 from signal import signal, SIGINT
 from gpiozero import Button, LED
-from ft8x7 import FT8x7
+import Hamlib
 from smbus import SMBus
 from buttonLED import ButtonLED
 #from i2clibraries import i2c_hmc5883l
+import curses
 
 EarthRadius = 6371 # Km
 
 def handler(signal_received, frame):
     # Handle any cleanup here
-    print('SIGINT or CTRL-C detected. Exiting gracefully')
+    curses.endwin()
+    logging.info('SIGINT or CTRL-C detected. Exiting gracefully')
     exit(0)
 
 class httpServer:
@@ -34,7 +36,7 @@ class httpServer:
         
     def run(self):        
         with http.server.HTTPServer(("", self.port), self.handler_class) as httpd:
-            print("serving at port", self.port)
+            logging.info("serving at port", self.port)
             httpd.serve_forever()
 
 
@@ -46,7 +48,7 @@ class plot:
      - QTH: The tuple representing the latitude/longitude for current
         point. Latitude and longitude must be in decimal degrees.
      - bearing: Degrees from QTH read from doppler.
-     - azimuth: My azimuth, to calculate real bearing.
+     - heaging: My heading, to calculate real azimuth.
      - distance: Distance (km) from QTH.
     :Return:
      Coordinates
@@ -54,19 +56,15 @@ class plot:
 
     latitude = None
     longitude = None
-    bearing = None
+    azimuth = None
     distance = None
     
-    def __init__(self, QTH, bearing, azimuth, distance):
+    def __init__(self, QTH, bearing, heading, distance):
         if (type(QTH) != tuple):
             raise TypeError("Only tuples are supported as arguments")
 
-        # Calculate offset between bearing my mobile bearing and plot bearing.
-        self.bearing = azimuth + bearing
-        if(self.bearing > 360):
-            self.bearing = self.bearing % 360
-
-        self.bearing = math.radians(self.bearing)
+        # Calculate offset between bearing and my heading.
+        self.azimuth = (heading + bearing) % 360
         self.latitude = math.radians(QTH[0])
         self.longitude = math.radians(QTH[1])
         self.distance = distance
@@ -79,16 +77,16 @@ class plot:
 
 
 class read_serial:
-    ser = None
-    sio = None
+    __ser = None
+    __sio = None
     
     def __init__(self, port = "/dev/ttyUSB0", baudrate = 4800):
-        self.ser = serial.Serial(port, baudrate, timeout = 0.5)
-        self.sio = io.TextIOWrapper(io.BufferedRWPair(self.ser, self.ser))
+        self.__ser = serial.Serial(port, baudrate, timeout = 0.5)
+        self.__sio = io.TextIOWrapper(io.BufferedRWPair(self.__ser, self.__ser))
     
     def readSerial(self):
-        self.sio.flush()
-        return self.sio.readline()
+        self.__sio.flush()
+        return self.__sio.readline()
 
 '''
 Thread Doppler
@@ -115,18 +113,15 @@ class Doppler(read_serial):
             return None
 
     def run(self):
-        print("Doppler started")
+        logging.info("Doppler started")
         while True:
             bearing = self.readDoppler()
             if(bearing):
                 self.bearing = bearing
                 self.dFlag = True
-                print(bearing)
-
-
 
 class GPS(read_serial):
-    azimuth = 0
+    heading = 0
     speed = 0
     QTH = (0, 0)
 
@@ -154,7 +149,7 @@ class GPS(read_serial):
         return EarthRadius * math.sqrt(dx**2 + dy**2)/1000
 
     """
-    Calculates the azimuth between two points.
+    Calculates the heading within two points.
     https://www.movable-type.co.uk/scripts/latlong.html
     https://gist.github.com/jeromer/2005586
 
@@ -166,11 +161,11 @@ class GPS(read_serial):
       - `QTH: The tuple representing the latitude/longitude for the
         first point. Latitude and longitude must be in decimal degrees
     :Returns:
-      The heading azimuth in degrees
+      The heading in degrees
     :Returns Type:
       int
     """
-    def get_azimuth(self, QTH0, QTH1):
+    def get_heading(self, QTH0, QTH1):
         if self.speed >= 1:
             lat1 = math.radians(QTH0[0])
             lat2 = math.radians(QTH1[0])
@@ -180,17 +175,11 @@ class GPS(read_serial):
             x = math.sin(diffLong) * math.cos(lat2)
             y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1) * math.cos(lat2) * math.cos(diffLong))
 
-            heading = math.atan2(x, y)
+            # math.atan2 return values from -180° to + 180°, so we calculate (heading + 360) % 360.
+            heading = int((math.degrees(math.atan2(x, y)) + 360) % 360)
+            return heading
 
-            # Now we have the initial bearing but math.atan2 return values
-            # from -180° to + 180° which is not what we want for a compass bearing
-            # The solution is to normalize the initial bearing as shown below
-            heading = int( ( math.degrees(heading) + 360) % 360 )
-
-        else:
-            heading = self.azimuth
-
-        return heading
+        return self.heading
     
     def getspeed(self, GPVTG):
         return float(GPVTG[7])
@@ -222,7 +211,7 @@ class GPS(read_serial):
         
     def run(self):
         QTH = None
-        print("GPS started")
+        logging.info("GPS started")
     
         while True:
             try:
@@ -236,7 +225,7 @@ class GPS(read_serial):
                     self.QTH = self.readGPS(data)
                     
                     if(QTH):
-                        self.azimuth = self.get_azimuth(QTH, self.QTH)
+                        self.heading = self.get_heading(QTH, self.QTH)
                     QTH = self.QTH
 
             except:
@@ -248,7 +237,7 @@ Thread Doppler, use GPS in Doppler
 '''
 class DopplerGPS(Doppler, GPS):
     def run(self):
-        print("Doppler and GPS started")
+        logging.info("Doppler and GPS started")
         QTH1 = None
 
         while True:
@@ -262,17 +251,16 @@ class DopplerGPS(Doppler, GPS):
                         self.QTH = QTH
                     
                         if QTH1:
-                            self.azimuth = self.get_azimuth(QTH, QTH1)
+                            self.heading = self.get_heading(QTH, QTH1)
                         QTH1 = QTH
                     
-                        print(QTH, self.azimuth)
+                        #print(QTH, self.heading)
                 
                 elif s[0] == "%":
                     bearing = self.readDoppler(s)
                     if(bearing):
                         self.bearing = bearing
                         self.dFlag = True
-                        print(bearing)
 
             except:
                 continue
@@ -284,75 +272,75 @@ Virtual rotate antennas.
 Read S-Meter after each antenna position.
 '''
 class ant4:
-    address = 0x2f
+    __address = 0x2f
+    __div = 1 #  1, 2 or 4 -- This is division of each quads.
+    __ohm_max = 255
     #antA: P0, TCON0
     #antB: P1, TCON0
     #antC: P3, TCON1
     #antD: P2, TCON1
-    #ant = (Register, TCON-on, degrees bearing)
-    antA = (0x00, 0xf, 0, 'antA') 
-    antB = (0x10, 0xf0, 90, 'antB')
-    antC = (0x70, 0xf0, 180, 'antC')
-    antD = (0x60, 0xf, 270, 'antD')
-    readTCON0 = 0x4d
-    writeTCON0 = 0x41
-    readTCON1 = 0xad
-    writeTCON1 = 0xa1
-    Quad = [(antA, antB), (antB, antC), (antC, antD), (antD, antA)]
-    step = 1
-    cycle = 0
-    ready = False
+    #ant = (Register, TCON-on, [degrees bearing])
+    __antA = (0x00, 0xf) 
+    __antB = (0x10, 0xf0)
+    __antC = (0x70, 0xf0)
+    __antD = (0x60, 0xf)
+    __readTCON0 = 0x4d
+    __writeTCON0 = 0x41
+    __readTCON1 = 0xad
+    __writeTCON1 = 0xa1
+    Array = list()
 
-    def __init__(self, rigcat):
+    def __init__(self, rigcat = None, div = 1, bearingA = 0, bearingB = 90, bearingC = 180, bearingD = 270):
         self.bus = SMBus(1)
-        self.dimm(self.antA, 0)
-        self.dimm(self.antB, 0)
-        self.dimm(self.antC, 0)
-        self.dimm(self.antD, 0)
+        self.__antA += (bearingA,)
+        self.__antB += (bearingB,)
+        self.__antC += (bearingC,)
+        self.__antD += (bearingD,)
+        self.__Quad = [(self.__antA, self.__antB), (self.__antB, self.__antC), (self.__antC, self.__antD), (self.__antD, self.__antA)]
+        self.dimm(self.__antA, 0)
+        self.dimm(self.__antB, 0)
+        self.dimm(self.__antC, 0)
+        self.dimm(self.__antD, 0)
         self.rigcat = rigcat
+        self.__div = div
         self.Array = list()
 
     '''
     TCON: get status of terminal (Off/On)
     '''
-    def readTCON(self, ant):
-        if ant == self.antA or ant == self.antB:
-            data = self.bus.read_word_data(self.address, self.readTCON0) >> 8
-        elif ant == self.antC or ant == self.antD:
-            data = self.bus.read_word_data(self.address, self.readTCON1) >> 8
+    def __readTCON(self, ant):
+        if ant == self.__antA or ant == self.__antB:
+            data = self.bus.read_word_data(self.__address, self.__readTCON0) >> 8
+        elif ant == self.__antC or ant == self.__antD:
+            data = self.bus.read_word_data(self.__address, self.__readTCON1) >> 8
 
         return data
 
     def turnOFF(self, ant):
-        data = self.readTCON(ant)
-        if ant == self.antA or ant == self.antB:
-            self.bus.write_byte_data(self.address, self.writeTCON0, data & ~ant[1])
-        elif ant == self.antC or ant == self.antD:
-            self.bus.write_byte_data(self.address, self.writeTCON1, data & ~ant[1])
+        data = self.__readTCON(ant)
+        if ant == self.__antA or ant == self.__antB:
+            self.bus.write_byte_data(self.__address, self.__writeTCON0, data & ~ant[1])
+        elif ant == self.__antC or ant == self.__antD:
+            self.bus.write_byte_data(self.__address, self.__writeTCON1, data & ~ant[1])
 
     def turnON(self, ant):
-        data = self.readTCON(ant)
-        if ant == self.antA or ant == self.antB:
-            self.bus.write_byte_data(self.address, self.writeTCON0, data | ant[1])
-        elif ant == self.antC or ant == self.antD:
-            self.bus.write_byte_data(self.address, self.writeTCON1, data | ant[1])
+        data = self.__readTCON(ant)
+        if ant == self.__antA or ant == self.__antB:
+            self.bus.write_byte_data(self.__address, self.__writeTCON0, data | ant[1])
+        elif ant == self.__antC or ant == self.__antD:
+            self.bus.write_byte_data(self.__address, self.__writeTCON1, data | ant[1])
 
     def dimm(self, ant, i):
-        self.bus.write_byte_data(self.address, ant[0], i)
+        if i == 0:
+            self.turnOFF(ant)
+        else:
+            self.turnON(ant)
+            self.bus.write_byte_data(self.__address, ant[0], i)
 
     def rotate(self, antA, antB, i):
-        self.dimm(antA, 254 - i)
+        self.dimm(antA, self.__ohm_max - i)
         self.dimm(antB, i)
-        #print((i, 254 - i))
-        return ( (i / 254 * 90) + antA[2] ) % 360
-
-    def test(self, ant, i=255):
-        for a in [self.antA, self.antB, self.antC, self.antD]:
-            if ant is a:
-                self.turnON(a)
-                self.dimm(a, i)
-            else:
-                self.turnOFF(a)
+        return round( ( (i / self.__ohm_max * 90) + antA[2] ) % 360)
 
     def get_bearing(self):
         Array = self.Array.copy()
@@ -366,69 +354,40 @@ class ant4:
             if i == MAX:
                 degArray.append(i[0])
 
-        r = abs(stats.spearmanr(Array).correlation)
-
         # Calculate bearing
-        return (statistics.median(degArray), MAX[1], r)
-
-    def reset(self):
-        self.cycle = 0
-        self.ready = False
+        return (statistics.mean(degArray), MAX[1])
 
     def run(self):
-        print("4ant started")
+        logging.info("4ant started")
         Array = list()
-        self.ready = False
         while True:
-            step = int(256 / 2 ** (self.cycle) + self.step)
-            self.rigcat.read_rx_status()
-            if self.rigcat._squelch is False:
-                Array.clear()
-                for ant in self.Quad:
-                    try:
-                        for i in range(0, 255, step):
-                            bearing = self.rotate(ant[0], ant[1], i)
-                            sleep(0.1)
-                            self.rigcat.read_rx_status()
-                            Array.append( (int(bearing), self.rigcat._s_meter) )
-                            if self.rigcat._squelch is True:
-                                break
-                    
-                    except:
-                        continue
-
-                    if self.rigcat._squelch is True:
-                        break
-                
-                if self.rigcat._squelch is True:
-                    self.Array.clear()
-                    self.reset()
-                else:
-                    self.ready = False
-                    sleep(0.25)
-                    self.Array = Array.copy()
-                    self.ready = True
-                    self.cycle = self.cycle +1 if self.cycle < 8 else 8
+            Array.clear()
+            for ant in self.__Quad:
+                for i in range(0, self.__div):
+                    deg = self.rotate(ant[0], ant[1], i * round(self.__ohm_max/self.__div) )
+                    sleep(2)
+                    s_meter = int((self.rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
+                    Array.append( (deg, s_meter))
+                self.rotate(ant[0], ant[1], self.__ohm_max)
+            self.Array = Array.copy()
 
 class kml:
-    File = None
-    record = list()
+    __File = None
+    __record = list()
     
     def __init__(self, File):
-        self.File = File
+        self.__File = File
         with open(File, 'w') as F:
             F.write('<kml></kml>\n')
     
-    def writePos(self, QTH, Bearing, Quality):
+    def writePos(self, QTH, Azimuth, Quality):
         timestamp = str(datetime.datetime.now())
         latitude = str(QTH[0])
         longitude = str(QTH[1])
-        BearingLat = str(Bearing[0])
-        BearingLon = str(Bearing[1])
+        AzimuthLat = str(Azimuth[0])
+        AzimuthLon = str(Azimuth[1])
                 
-        if Quality == 15:
-            color = '000000'
-        elif Quality >= 9 and Quality < 15:
+        if Quality >= 9:
             color = '0000ff'
         elif Quality == 8:
             color = '00007f'
@@ -447,13 +406,13 @@ class kml:
         elif Quality == 1:
             color = 'ff0000'
         else:
-            color = '7f0000'
+            color = '000000'
         
-        self.record.append((timestamp, latitude, longitude, BearingLat, BearingLon, color))
+        self.__record.append((timestamp, latitude, longitude, BearingLat, BearingLon, color))
         
-        with open(self.File, 'w') as F:
+        with open(self.__File, 'w') as F:
             F.write('<Document>\n')
-            for R in self.record:
+            for R in self.__record:
                 F.write('<Placemark>\n')
                 F.write('<name>' + R[0] + '</name>\n')
                 F.write('<Style>\n')
@@ -496,11 +455,12 @@ class ButtonLED(ButtonLED):
         self.led.on()
         self.button_pressed = False
 
+
 def main():
     signal(SIGINT, handler)
     config = configparser.ConfigParser()
     if len(sys.argv) > 1:
-        config.read(argv[1])
+        config.read(sys.argv[1])
     else:
         config.read('azimuth.conf')
         
@@ -526,75 +486,67 @@ def main():
             my_GPS = my_Doppler
             TDoppler.start()
 
-        while True:        
+        screen.initscr()
+        while TDoppler.is_alive():        
             if my_Doppler.dFlag:
-                p = plot(my_GPS.QTH, my_Doppler.bearing[0], my_GPS.azimuth, int(config['common']['radius']))
+                p = plot(my_GPS.QTH, my_Doppler.bearing[0], my_GPS.heading, int(config['common']['radius']))
                 K.writePos(my_GPS.QTH, p.get_plot(), my_Doppler.bearing[1])
-                print("-->", my_GPS.QTH, str(int(math.degrees(p.bearing))) + "\u00b0", "Q" + str(my_Doppler.bearing[1]), "<--")
+                msg = "--> " + str(my_GPS.QTH) + str(p.azimuth) + "\u00b0 Q" + str(my_Doppler.bearing[1]) + " <--"
+                screen.addstr(1, 1, msg)
+                screen.refresh()
                 my_Doppler.dFlag = False
-            sleep(1)
+            curses.napms(1000)
 
     else:
         my_ButtonLED = ButtonLED(18, 17)
 
         if 'rigcat' in config.sections():
-            try:
-                rigcat = FT8x7(config['rigcat']['dev'], int(config['rigcat']['baud']))
-            except:
-                pass
+            Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_NONE)
+            rigcat = Hamlib.Rig(Hamlib.__dict__[config['rigcat']['model']])
+            rigcat.state.rigport.pathname = config['rigcat']['dev']
+            rigcat.state.rigport.parm.serial.rate = int(config['rigcat']['baud'])
+            rigcat.open()
 
+        screen = curses.initscr()
         while True and config['common']['method'] == '1ant':
             my_ButtonLED.reset()
-            print(my_GPS.QTH, str(my_GPS.azimuth) + "\u00b0", str(my_GPS.speed) + " km/h")
-            sleep(0.25)
+            s_meter = int((rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
+            status = str(my_GPS.QTH) + " " + str(my_GPS.heading) + "\u00b0 " + str(my_GPS.speed) + " km/h S" + str(s_meter) + "   "
+            screen.addstr(2, 1, status)
+            screen.refresh()
+            curses.napms(250)
             if my_ButtonLED.button_pressed:
-                try:
-                    rigcat.read_rx_status()
-                    s_meter = rigcat._s_meter
-                except:
-                    s_meter = 0xf
-
-                p = plot(my_GPS.QTH, 0, my_GPS.azimuth, int(config['common']['radius']))
+                p = plot(my_GPS.QTH, 0, my_GPS.heading, int(config['common']['radius']))
                 K.writePos(my_GPS.QTH, p.get_plot(), s_meter)
-                print("-->", my_GPS.QTH, str(int(math.degrees(p.bearing))) + "\u00b0", "S" + str(s_meter), "<--")
-                sleep(0.25)
+                msg = "--> " + str(my_GPS.QTH) + str(p.azimuth) + "\u00b0 S" + str(s_meter) + " <--   "
+                screen.addstr(1, 1, msg)
+                screen.refresh()
+                curses.napms(250)
         
         if config['common']['method'] == '4ant':
             my_ButtonLED.reset()
-            my_4ant = ant4(rigcat)
+            my_4ant = ant4(rigcat, int(config['4ant']['div']), int(config['4ant']['antA']), int(config['4ant']['antB']), int(config['4ant']['antC']), int(config['4ant']['antD']))
             T4ant = threading.Thread(target = my_4ant.run)
             T4ant.start()
-            while True:
-                my_4ant.step = int(my_GPS.speed * 8)
-                print(my_GPS.QTH, str(my_GPS.azimuth) + "\u00b0", str(my_GPS.speed) + " km/h")
-                sleep(0.25)
-
-                if my_4ant.ready:
-                    my_ButtonLED.led.on()
-                    bearing = my_4ant.get_bearing()
-                    print(bearing)
-                else:
-                    my_ButtonLED.led.off()
-
-                if my_ButtonLED.button_pressed and my_4ant.ready:
-                    my_4ant.ready = False
-                    bearing = my_4ant.get_bearing()
-                    p = plot(my_GPS.QTH, bearing[0], my_GPS.azimuth, int(config['common']['radius']))
-                    K.writePos(my_GPS.QTH, p.get_plot(), bearing[1])
-                    print("-->", my_GPS.QTH, str(int(math.degrees(p.bearing))) + "\u00b0", "S" + str(bearing[1]), "<--")
-                    sleep(0.25)
-                    my_4ant.reset()
+            screen = curses.initscr()
+            while T4ant.is_alive():
+                s_meter = int((rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
+                status = str(my_GPS.QTH) + " " + str(my_GPS.heading) + "\u00b0 " + str(my_GPS.speed) + " km/h S" + str(s_meter) + "   "
+                if len(my_4ant.Array):
+                    stats_array = str(my_4ant.Array) + "          "
+                    bearing_quality = my_4ant.get_bearing()
+                    p = plot(my_GPS.QTH, bearing_quality[0], my_GPS.heading, int(config['common']['radius']))
+                    msg = "--> " + str(p.azimuth) + "\u00b0 S" + str(bearing_quality[1]) + " <--   "
+                    screen.addstr(1, 1, msg)
+                    screen.addstr(3, 1, stats_array)
+                screen.addstr(2, 1, status)
+                screen.refresh()
+                curses.napms(250)
+                
+                if my_ButtonLED.button_pressed:
+                    K.writePos(my_GPS.QTH, p.get_plot(), bearing_quality[1])
                     my_ButtonLED.reset()
-    
-        if config['common']['method'] == 'test4ant':
-            my_4ant = ant4(rigcat)
-            while True:
-                for a in [my_4ant.antA, my_4ant.antB, my_4ant.antC, my_4ant.antD]:
-                    print(a[3])
-                    my_ButtonLED.reset()
-                    my_4ant.test(a)
-                    while not my_ButtonLED.button_pressed:
-                        sleep(1)
+                    
 
 if __name__ == '__main__':
     main()
