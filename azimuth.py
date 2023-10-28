@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-import math, numpy, statistics
+import math, numpy
+from scipy.stats import circmean
 import serial
 import io
 import datetime
@@ -288,6 +289,7 @@ class ant4:
     __writeTCON0 = 0x41
     __readTCON1 = 0xad
     __writeTCON1 = 0xa1
+    _deg = 0
     Array = list()
 
     def __init__(self, rigcat = None, div = 1, bearingA = 0, bearingB = 90, bearingC = 180, bearingD = 270):
@@ -303,7 +305,7 @@ class ant4:
         self.dimm(self.__antD, 0)
         self.rigcat = rigcat
         self.__div = div
-        self.Array = list()
+        self.DArray = dict()
 
     '''
     TCON: get status of terminal (Off/On)
@@ -343,33 +345,36 @@ class ant4:
         return round( ( (i / self.__ohm_max * 90) + antA[2] ) % 360)
 
     def get_bearing(self):
-        Array = self.Array.copy()
+        DArray = self.DArray.copy()
+        if 0 in DArray:
+            DArray[360] = DArray[0]
 
         # Find max S-Meter value
-        MAX = max(Array, key=lambda x:x[1])
+        MAX = max(DArray.values(), key=lambda x:x)
 
         # Create sub array of deg for MAX values.
-        degArray = list()
-        for i in Array:
-            if i == MAX:
-                degArray.append(i[0])
+        max_array = list()
+        for i in DArray:
+            if DArray[i] == MAX:
+                max_array.append(i)
 
         # Calculate bearing
-        return (statistics.mean(degArray), MAX[1])
+        bearing = int( round( numpy.rad2deg( circmean( numpy.deg2rad( numpy.array(max_array) )))) % 360 )
+        return (bearing, MAX)
 
     def run(self):
         logging.info("4ant started")
-        Array = list()
+        DArray = dict()
         while True:
-            Array.clear()
+            DArray.clear()
             for ant in self.__Quad:
                 for i in range(0, self.__div):
-                    deg = self.rotate(ant[0], ant[1], i * round(self.__ohm_max/self.__div) )
+                    self._deg = self.rotate(ant[0], ant[1], i * round(self.__ohm_max/self.__div) )
                     sleep(2)
-                    s_meter = int((self.rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
-                    Array.append( (deg, s_meter))
+                    self._s_meter = int((self.rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
+                    DArray[self._deg] = self._s_meter
                 self.rotate(ant[0], ant[1], self.__ohm_max)
-            self.Array = Array.copy()
+            self.DArray = DArray.copy()
 
 class kml:
     __File = None
@@ -531,14 +536,15 @@ def main():
             screen = curses.initscr()
             while T4ant.is_alive():
                 s_meter = int((rigcat.get_level_i(Hamlib.RIG_LEVEL_STRENGTH) + 54) / 6)
-                status = str(my_GPS.QTH) + " " + str(my_GPS.heading) + "\u00b0 " + str(my_GPS.speed) + " km/h S" + str(s_meter) + "   "
-                if len(my_4ant.Array):
-                    stats_array = str(my_4ant.Array) + "          "
+                status = "QTH: " + str(my_GPS.QTH) + " heading: " + str(my_GPS.heading) + "\u00b0 speed: " + str(my_GPS.speed) + " km/h ant deg: " + str(my_4ant._deg) + "\u00b0 S" + str(s_meter) + "   "
+                if len(my_4ant.DArray):
+                    stats_array = str(my_4ant.DArray) + "          "
                     bearing_quality = my_4ant.get_bearing()
                     p = plot(my_GPS.QTH, bearing_quality[0], my_GPS.heading, int(config['common']['radius']))
                     msg = "--> " + str(p.azimuth) + "\u00b0 S" + str(bearing_quality[1]) + " <--   "
                     screen.addstr(1, 1, msg)
                     screen.addstr(3, 1, stats_array)
+                    screen.addstr(4, 1, str(bearing_quality) + "   ")
                 screen.addstr(2, 1, status)
                 screen.refresh()
                 curses.napms(250)
