@@ -186,7 +186,7 @@ class GPS(read_serial):
     """
     def get_heaging(self, GPVTG):
         if len(GPVTG[1]):
-            return GPVTG[1]
+            return float(GPVTG[1])
 
         return self.heading
 
@@ -229,7 +229,7 @@ class GPS(read_serial):
                 
                 if data[0] == "$GPVTG":
                     self.speed = self.getspeed(data)
-                    self.heading = self.get_heading(data)
+                    self.heading = round(self.get_heading(data))
     
                 elif data[0] == "$GPGGA":
                     self.QTH = self.readGPS(data)
@@ -363,7 +363,7 @@ class ant4:
                 max_array.append(i)
 
         # Calculate bearing
-        bearing = int( round( numpy.rad2deg( circmean( numpy.deg2rad( numpy.array(max_array) )))) % 360 )
+        bearing = round( numpy.rad2deg( circmean( numpy.deg2rad( numpy.array(max_array) )))) % 360
         return (bearing, MAX)
 
     def run(self):
