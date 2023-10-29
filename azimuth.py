@@ -71,8 +71,8 @@ class plot:
         self.distance = distance
     
     def get_plot(self):
-        lat = math.asin( math.sin(self.latitude) * math.cos(self.distance/EarthRadius) + math.cos(self.latitude) * math.sin(self.distance/EarthRadius) * math.cos(self.bearing))
-        lon = self.longitude + math.atan2(math.sin(self.bearing) * math.sin(self.distance/EarthRadius) * math.cos(self.latitude), math.cos(self.distance/EarthRadius)-math.sin(self.latitude) * math.sin(lat))
+        lat = math.asin( math.sin(self.latitude) * math.cos(self.distance/EarthRadius) + math.cos(self.latitude) * math.sin(self.distance/EarthRadius) * math.cos(self.azimuth))
+        lon = self.longitude + math.atan2(math.sin(self.azimuth) * math.sin(self.distance/EarthRadius) * math.cos(self.latitude), math.cos(self.distance/EarthRadius)-math.sin(self.latitude) * math.sin(lat))
         return float(format(math.degrees(lat), ".6f")), float(format(math.degrees(lon), ".6f"))
         
 
@@ -181,7 +181,15 @@ class GPS(read_serial):
             return heading
 
         return self.heading
-    
+
+    """ Get heaging with GPS value.
+    """
+    def get_heaging(self, GPVTG):
+        if len(GPVTG[1]):
+            return GPVTG[1]
+
+        return self.heading
+
     def getspeed(self, GPVTG):
         return float(GPVTG[7])
 
@@ -221,13 +229,10 @@ class GPS(read_serial):
                 
                 if data[0] == "$GPVTG":
                     self.speed = self.getspeed(data)
+                    self.heading = self.get_heading(data)
     
                 elif data[0] == "$GPGGA":
                     self.QTH = self.readGPS(data)
-                    
-                    if(QTH):
-                        self.heading = self.get_heading(QTH, self.QTH)
-                    QTH = self.QTH
 
             except:
                 continue
@@ -254,8 +259,7 @@ class DopplerGPS(Doppler, GPS):
                         if QTH1:
                             self.heading = self.get_heading(QTH, QTH1)
                         QTH1 = QTH
-                    
-                        #print(QTH, self.heading)
+
                 
                 elif s[0] == "%":
                     bearing = self.readDoppler(s)
@@ -413,7 +417,7 @@ class kml:
         else:
             color = '000000'
         
-        self.__record.append((timestamp, latitude, longitude, BearingLat, BearingLon, color))
+        self.__record.append((timestamp, latitude, longitude, AzimuthLat, AzimuthLon, color))
         
         with open(self.__File, 'w') as F:
             F.write('<Document>\n')
@@ -454,6 +458,8 @@ class ButtonLED(ButtonLED):
         while True:
             if self.button.is_pressed:
                 self.led.off()
+                while self.button.is_pressed:
+                    None
                 self.button_pressed = True
 
     def reset(self):
@@ -552,6 +558,7 @@ def main():
                 if my_ButtonLED.button_pressed:
                     K.writePos(my_GPS.QTH, p.get_plot(), bearing_quality[1])
                     my_ButtonLED.reset()
+                    sleep(3)
                     
 
 if __name__ == '__main__':
