@@ -19,7 +19,7 @@ class Compass:
     def __init__(self, declination: float = 0.0):
         self.bus = smbus.SMBus(1)  # or bus = smbus.SMBus(0) for older version boards
         self._device_address = 0x1e  # HMC5883L magnetometer device address
-        self._declination = declination
+        self.declination = declination
 
         # Write to Configuration Register A
         self.bus.write_byte_data(self._device_address, Register_A, 0x70)
@@ -48,22 +48,7 @@ class Compass:
         # Read Accelerometer raw value
         x = self.read_raw_data(X_axis_H)
         y = self.read_raw_data(Y_axis_H)
+        self.read_raw_data(Z_axis_H)
 
-        # math.atan2 return values from -180° to + 180°, so we calculate (heading + 360) % 360.
-        return int(((math.degrees(math.atan2(x, y)) + 360) % 360) - self._declination)
-
-        """
-        heading = math.atan2(y, x) + self._declination
-        
-        # Due to declination check for >360 degree
-        if heading > 2*math.pi:
-            heading = heading - 2*math.pi
-
-        # check for sign
-        if heading < 0:
-            heading = heading + 2*math.pi
-
-        # convert into angle
-        return int(heading * 180/math.pi)
-        """
-
+        heading = math.atan2(y, x)
+        return int((math.degrees(heading) - self.declination + 360) % 360)
