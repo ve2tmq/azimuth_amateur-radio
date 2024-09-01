@@ -1,6 +1,5 @@
 import logging
 import math
-from i2clibraries import i2c_hmc5883l
 from read_serial import ReadSerial
 
 EARTH_RADIUS = 6371  # Km
@@ -13,9 +12,6 @@ class GPS(ReadSerial):
 
     def __init__(self, GPSDev, GPSBaud, degrees=0, minutes=0):
         super().__init__(GPSDev, GPSBaud)
-        self.compass = i2c_hmc5883l.i2c_hmc5883l(1)
-        self.compass.setContinuousMode()
-        self.compass.setDeclination(degrees, minutes)
 
     """
     Approximate calculation distance (in meter)
@@ -39,10 +35,6 @@ class GPS(ReadSerial):
     Calculates the heading within two points.
     https://www.movable-type.co.uk/scripts/latlong.html
     https://gist.github.com/jeromer/2005586
-
-    Magnetic Compass HMC_5883L
-    https://tutorials-raspberrypi.com/build-your-own-raspberry-pi-compass-hmc5883l/
-    https://www.electronicwings.com/sensors-modules/hmc5883l-magnetometer-module
 
     :Parameters:
       - `QTH: The tuple representing the latitude/longitude for the
