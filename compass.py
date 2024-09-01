@@ -3,7 +3,7 @@
 	http://www.electronicwings.com
 '''
 import smbus		# import SMBus module of I2C
-import math
+import numpy
 
 # some MPU6050 Registers and their Address
 Register_A     = 0              # Address of Configuration register A
@@ -48,6 +48,16 @@ class Compass:
         # Read Accelerometer raw value
         x = self.read_raw_data(X_axis_H)
         y = self.read_raw_data(Y_axis_H)
-        self.read_raw_data(Z_axis_H)
+        z = self.read_raw_data(Z_axis_H)
 
-        return int((math.degrees(math.atan2(y, x)) - self.declination + 360) % 360)
+        print((x, y, z))
+        heading = numpy.arctan2(y, x)
+        heading += self.declination
+
+        if heading < 0:
+            heading += 2 * numpy.pi
+
+        if heading > 2 * numpy.pi:
+            heading -= 2 * numpy.pi
+
+        return int(numpy.rad2deg(heading))
