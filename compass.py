@@ -50,5 +50,4 @@ class Compass:
         y = self.read_raw_data(Y_axis_H)
         self.read_raw_data(Z_axis_H)
 
-        heading = math.atan2(y, x)
-        return int((math.degrees(heading) - self.declination + 360) % 360)
+        return int((math.degrees(math.atan2(y, x)) - self.declination + 360) % 360)
