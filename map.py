@@ -9,7 +9,7 @@ class plot:
      - QTH: The tuple representing the latitude/longitude for current
         point. Latitude and longitude must be in decimal degrees.
      - bearing: Degrees from QTH read from doppler.
-     - heaging: My heading, to calculate real azimuth.
+     - heading: My heading, to calculate real azimuth.
      - distance: Distance (km) from QTH.
     :Return:
      Coordinates
@@ -20,7 +20,7 @@ class plot:
     azimuth = None
     distance = None
 
-    def __init__(self, QTH, bearing, heading, distance):
+    def __init__(self, QTH, bearing, distance, heading = 0):
         if (type(QTH) != tuple):
             raise TypeError("Only tuples are supported as arguments")
 

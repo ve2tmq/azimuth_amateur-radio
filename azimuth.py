@@ -340,7 +340,7 @@ def main():
         screen = curses.initscr()
         while TDoppler.is_alive():
             if my_Doppler.dFlag:
-                p = plot(my_GPS.QTH, my_Doppler.bearing[0], my_GPS.heading, int(config['common']['radius']))
+                p = plot(my_GPS.QTH, my_Doppler.bearing[0], int(config['common']['radius']), my_GPS.heading)
                 K.writePos(my_GPS.QTH, p.get_plot(), my_Doppler.bearing[1])
                 msg = "--> " + str(my_GPS.QTH) + str(p.azimuth) + "\u00b0 Q" + str(my_Doppler.bearing[1]) + " <--"
                 screen.addstr(1, 1, msg)
@@ -368,7 +368,7 @@ def main():
             screen.refresh()
             curses.napms(250)
             if my_ButtonLED.button_pressed:
-                p = plot(my_GPS.QTH, 0, my_GPS.heading, int(config['common']['radius']))
+                p = plot(my_GPS.QTH, 0, int(config['common']['radius']), my_GPS.heading)
                 K.writePos(my_GPS.QTH, p.get_plot(), s_meter)
                 msg = "--> " + str(my_GPS.QTH) + str(p.azimuth) + "\u00b0 S" + str(s_meter) + " <--   "
                 screen.addstr(1, 1, msg)
@@ -389,7 +389,7 @@ def main():
                 if len(my_4ant.DArray):
                     stats_array = str(my_4ant.DArray) + "          "
                     bearing_quality = my_4ant.get_bearing()
-                    p = plot(my_GPS.QTH, bearing_quality[0], my_GPS.heading, int(config['common']['radius']))
+                    p = plot(my_GPS.QTH, bearing_quality[0], int(config['common']['radius']), my_GPS.heading)
                     msg = "--> " + str(p.azimuth) + "\u00b0 S" + str(bearing_quality[1]) + " <--   "
                     screen.addstr(1, 1, msg)
                     screen.addstr(3, 1, stats_array)
