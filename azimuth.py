@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
 
-import math, numpy
+import configparser
+import curses
+import datetime
+import http.server
+import logging
+import sys
+import threading
+from functools import partial
+from signal import signal, SIGINT
+from time import sleep
 
+import Hamlib
+import numpy
 from scipy.stats import circmean
+from smbus import SMBus
 
+from buttonLED import ButtonLED
+from gps import GPS
 from map import plot
 from read_serial import ReadSerial
-import datetime
-import logging
-import threading
-import http.server
-from functools import partial
-import sys
-from time import sleep
-import configparser
-from signal import signal, SIGINT
-import Hamlib
-from smbus import SMBus
-from buttonLED import ButtonLED
-from gps import GPS, EARTH_RADIUS
-import curses
-
-
 
 
 def handler(signal_received, frame):
