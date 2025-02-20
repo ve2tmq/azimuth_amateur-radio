@@ -13,13 +13,13 @@ class GPS(ReadSerial):
     def __init__(self, GPSDev, GPSBaud, degrees=0, minutes=0):
         super().__init__(GPSDev, GPSBaud)
 
-    """
-    Approximate calculation distance (in meter)
-    (expanding the trigonometric functions around the midpoint
-    https://github.com/gojuno/geo-py/blob/master/geo/sphere.py
-    """
 
     def get_distance(self, QTH0, QTH1):
+        """
+        Approximate calculation distance (in meter)
+        (expanding the trigonometric functions around the midpoint
+        https://github.com/gojuno/geo-py/blob/master/geo/sphere.py
+        """
         lat1 = math.radians(QTH0[0])
         lat2 = math.radians(QTH1[0])
         lon1 = math.radians(QTH0[1])
@@ -31,21 +31,21 @@ class GPS(ReadSerial):
 
         return EARTH_RADIUS * math.sqrt(dx ** 2 + dy ** 2) / 1000
 
-    """
-    Calculates the heading within two points.
-    https://www.movable-type.co.uk/scripts/latlong.html
-    https://gist.github.com/jeromer/2005586
-
-    :Parameters:
-      - `QTH: The tuple representing the latitude/longitude for the
-        first point. Latitude and longitude must be in decimal degrees
-    :Returns:
-      The heading in degrees
-    :Returns Type:
-      int
-    """
 
     def get_heading(self, QTH0, QTH1):
+        """
+        Calculates the heading within two points.
+        https://www.movable-type.co.uk/scripts/latlong.html
+        https://gist.github.com/jeromer/2005586
+
+        :Parameters:
+          - `QTH: The tuple representing the latitude/longitude for the
+            first point. Latitude and longitude must be in decimal degrees
+        :Returns:
+          The heading in degrees
+        :Returns Type:
+          int
+        """
         if self.speed >= 1:
             lat1 = math.radians(QTH0[0])
             lat2 = math.radians(QTH1[0])
@@ -55,16 +55,16 @@ class GPS(ReadSerial):
             x = math.sin(diffLong) * math.cos(lat2)
             y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1) * math.cos(lat2) * math.cos(diffLong))
 
-            # math.atan2 return values from -180° to + 180°, so we calculate (heading + 360) % 360.
-            heading = int((math.degrees(math.atan2(x, y)) + 360) % 360)
+            # math.atan2 return values from -180° to + 180°, so we calculate heading [modulo] 360.
+            heading = int(math.degrees(math.atan2(x, y)) % 360)
             return heading
 
         return self.heading
 
-    """ Get heaging with GPS value.
-    """
 
     def get_heading(self, GPVTG):
+        """ Get heaging with GPS value.
+        """
         if len(GPVTG[1]):
             return float(GPVTG[1])
 
@@ -73,13 +73,13 @@ class GPS(ReadSerial):
     def get_speed(self, GPVTG):
         return float(GPVTG[7])
 
-    """
-    Thread
-    Read GPS from serial port
-    coordinate: tuple (lat, lon)
-    """
 
     def readGPS(self, GPGGA):
+        """
+        Thread
+        Read GPS from serial port
+        coordinate: tuple (lat, lon)
+        """
         time = GPGGA[1]
 
         latDMm = float(GPGGA[2]) / 100
