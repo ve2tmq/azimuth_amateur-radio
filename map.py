@@ -9,8 +9,8 @@ class plot:
      - QTH: The tuple representing the latitude/longitude for current
         point. Latitude and longitude must be in decimal degrees.
      - bearing: Degrees from QTH read from doppler.
-     - heading: My heading, to calculate real azimuth.
      - distance: Distance (km) from QTH.
+     - heading: My heading, to calculate real azimuth.
     :Return:
      Coordinates
     """
