@@ -18,7 +18,7 @@ from smbus import SMBus
 
 from buttonLED import ButtonLED
 from gps import GPS
-from map import plot
+from geo import plot
 from read_serial import ReadSerial
 
 

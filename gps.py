@@ -14,24 +14,6 @@ class GPS(ReadSerial):
         super().__init__(GPSDev, GPSBaud)
 
 
-    def get_distance(self, QTH0, QTH1):
-        """
-        Approximate calculation distance (in meter)
-        (expanding the trigonometric functions around the midpoint
-        https://github.com/gojuno/geo-py/blob/master/geo/sphere.py
-        """
-        lat1 = math.radians(QTH0[0])
-        lat2 = math.radians(QTH1[0])
-        lon1 = math.radians(QTH0[1])
-        lon2 = math.radians(QTH1[1])
-
-        cos_lat = math.cos((lat1 + lat2) / 2.0)
-        dx = (lat2 - lat1)
-        dy = (cos_lat * (lon2 - lon1))
-
-        return EARTH_RADIUS * math.sqrt(dx ** 2 + dy ** 2) / 1000
-
-
     def get_heading(self, QTH0, QTH1):
         """
         Calculates the heading within two points.
