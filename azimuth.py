@@ -148,11 +148,10 @@ class ant4:
         self.__div = div
         self.DArray = dict()
 
-    '''
-    TCON: get status of terminal (Off/On)
-    '''
-
     def __readTCON(self, ant):
+        """
+        TCON: get status of terminal (Off/On)
+        """
         if ant == self.__antA or ant == self.__antB:
             data = self.bus.read_word_data(self.__address, self.__readTCON0) >> 8
         elif ant == self.__antC or ant == self.__antD:
